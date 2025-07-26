@@ -3,7 +3,7 @@
 
 A **fun**, **colorful**, and **educational** Streamlit app that simulates Nikola Tesla's 1898 remote-control boat — built with modern tools but inspired by the **first-ever radio-controlled invention**! 📡
 
-![Tesla Toy Boat Banner](https://i.imgur.com/4fYdG6m.jpg)
+![Tesla Toy Boat Banner](tesla-banner.jpg)
 
 ---
 
@@ -35,8 +35,9 @@ streamlit run app.py
 ## 📂 Files Included
 
 - `app.py` — Main Streamlit application
+- `tesla-banner.jpg` — Project banner image
 - `README.md` — Project description for GitHub
-- (Optional) `requirements.txt` for dependency tracking
+- `requirements.txt` — Python dependencies
 
 ---
 
