@@ -1,9 +1,8 @@
-
 # 🚤 Tesla's Toy Boat Simulator
 
 A **fun**, **colorful**, and **educational** Streamlit app that simulates Nikola Tesla's 1898 remote-control boat — built with modern tools but inspired by the **first-ever radio-controlled invention**! 📡
 
-![Tesla Toy Boat](https://upload.wikimedia.org/wikipedia/commons/thumb/3/30/Nikola_Tesla%27s_remote-controlled_boat_%28replica%29.jpg/800px-Nikola_Tesla%27s_remote-controlled_boat_%28replica%29.jpg)
+![Tesla Toy Boat Banner](https://upload.wikimedia.org/wikipedia/commons/3/30/Nikola_Tesla%27s_remote-controlled_boat_%28replica%29.jpg)
 
 ---
 
@@ -71,3 +70,4 @@ Read more 👉 [Tesla's Original RC Boat](https://www.engadget.com/2014-01-19-ni
 
 ---
 
+## ❤️ Made for makers, students, and Tesla fans alike.
