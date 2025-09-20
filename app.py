@@ -1,5 +1,5 @@
 # tesla_toy_boat_streamlit.py
-# Tesla’s Toy Boat — Royal Blue • Mobile-friendly + D-pad/Joystick switcher + Haptics + SFX
+# Tesla’s Toy Boat — Royal Blue • Mobile-friendly + D-pad/Joystick + Haptics + SFX
 # HUD pinned bottom-right inside the pond.
 # Run: streamlit run tesla_toy_boat_streamlit.py
 
@@ -42,7 +42,7 @@ HTML = r"""
   header h1{font-size:1.15rem;margin:0;color:var(--royal)}
   .pill{font-size:.9rem;padding:.2rem .6rem;border-radius:999px;background:#00000010;border:1px solid #0002}
 
-  #pond{border:4px solid #ffffffaa;border-radius:16px;position:relative;overflow:hidden;min-height:420px;max-width:1200px;margin:.25rem auto 5.5rem auto}
+  #pond{border:4px solid #ffffffaa;border-radius:16px;position:relative;overflow:hidden;min-height:420px;max-width:1200px;margin:.25rem auto 6.5rem auto}
   canvas{display:block;width:100%;height:100%}
   .hint{color:#000a;text-align:center;padding:.4rem 0}
 
@@ -54,6 +54,13 @@ HTML = r"""
     pointer-events:none;
   }
   .hud div{white-space:nowrap}
+
+  /* Error bubble (if anything fails) */
+  .err{
+    position:absolute; left:50%; top:1rem; transform:translateX(-50%);
+    background:#fff3f3; color:#900; border:2px solid #f3b; border-radius:10px; padding:.4rem .6rem;
+    font-weight:600; z-index:3; display:none;
+  }
 
   /* Control Dock */
   .dock{
@@ -76,16 +83,12 @@ HTML = r"""
   .ghost{opacity:0}
 
   /* Joystick */
-  .stickpad{
-    position:relative; width:180px; height:180px; border-radius:50%;
+  .stickpad{ position:relative; width:180px; height:180px; border-radius:50%;
     background:radial-gradient(circle at 50% 50%, #f6f8ff, #e9efff);
-    border:2px solid #0002; box-shadow:inset 0 6px 12px #0000000e, 0 4px 0 #0001; touch-action:none;
-  }
-  .stick{
-    position:absolute; left:50%; top:50%; width:84px; height:84px; margin:-42px 0 0 -42px;
-    border-radius:50%; background:linear-gradient(180deg,#fff,#f0f5ff); border:2px solid #0003; box-shadow:0 4px 0 #0001;
-    display:flex; align-items:center; justify-content:center; font-weight:800; color:var(--royal)
-  }
+    border:2px solid #0002; box-shadow:inset 0 6px 12px #0000000e, 0 4px 0 #0001; touch-action:none; }
+  .stick{ position:absolute; left:50%; top:50%; width:84px; height:84px; margin:-42px 0 0 -42px; border-radius:50%;
+    background:linear-gradient(180deg,#fff,#f0f5ff); border:2px solid #0003; box-shadow:0 4px 0 #0001;
+    display:flex; align-items:center; justify-content:center; font-weight:800; color:var(--royal) }
   .modeToggle{min-width:160px}
 
   @media (max-width:480px){
@@ -108,6 +111,7 @@ HTML = r"""
   </header>
 
   <div id="pond">
+    <div class="err" id="err">Something went wrong — reloading the game…</div>
     <canvas id="game" width="1280" height="720" aria-label="Pond"></canvas>
     <div class="hud" id="hud">
       <div>Score: <span id="score">0</span>/<span id="goal">10</span></div>
@@ -137,272 +141,288 @@ HTML = r"""
 
 <script>
 (() => {
-  // --- Config + Audio + Haptics ---
-  const cfg = JSON.parse(document.getElementById('cfg').textContent || "{}");
-  let audioCtx, muted=false;
-  function ensureAudio(){ if(!audioCtx){ const AC=window.AudioContext||window.webkitAudioContext; audioCtx = AC? new AC(): null; } if(audioCtx && audioCtx.state==='suspended') audioCtx.resume(); }
-  function beep(freq=660, dur=100, type='sine', gain=0.05){
-    if(muted || !audioCtx) return;
-    const o=audioCtx.createOscillator(), g=audioCtx.createGain();
-    o.type=type; o.frequency.value=freq; g.gain.value=gain;
-    o.connect(g); g.connect(audioCtx.destination);
-    o.start(); setTimeout(()=>o.stop(), dur);
-  }
-  function vibrate(ms=20){ if(navigator.vibrate) try{ navigator.vibrate(ms); }catch{} }
-
-  const muteBtn = document.getElementById('mute');
-  muteBtn.addEventListener('click', ()=>{ ensureAudio(); muted=!muted; muteBtn.textContent = muted? '🔇':'🔈'; beep(330,80,'square',0.03); });
-
-  // --- Canvas & sizing ---
-  const canvas = document.getElementById('game');
-  const ctx = canvas.getContext('2d');
-  const W=canvas.width, H=canvas.height;
-  const rand=(a,b)=>a+Math.random()*(b-a);
-
-  function fit(){
-    const r = canvas.width / canvas.height;
-    const box = document.getElementById('pond').getBoundingClientRect();
-    let w = box.width, h = box.height;
-    if (w/h > r) w = h * r; else h = w / r;
-    canvas.style.width = w + 'px';
-    canvas.style.height = h + 'px';
-  }
-  addEventListener('resize', fit); fit();
-
-  // --- State ---
-  function spawn(){
-    return {
-      boat:{ x:W*0.15, y:H*0.5, v:0, a:0, r:0, lamp:false },
-      buoys:Array.from({length: cfg.buoy_count || 14}, ()=>({x:rand(W*0.25,W*0.9),y:rand(H*0.1,H*0.9),r:16,hue:rand(0,360)})),
-      reeds:Array.from({length: cfg.reeds_count || 18}, ()=>({x:rand(W*0.2,W*0.95),y:rand(H*0.1,H*0.9),r:24})),
-      score:0, won:false, goal:cfg.buoy_goal || 10, max_speed:cfg.max_speed || 240, drag:cfg.drag || 0.6
-    };
-  }
-  let state = spawn();
-
-  // --- Input: keyboard + virtual ---
-  const keys={}; addEventListener('keydown', e=>{ keys[e.code]=true; ensureAudio(); }); addEventListener('keyup', e=>{ keys[e.code]=false; });
-
-  // D-pad builder (press-and-hold)
-  function buildDpad(){
-    const pad = document.createElement('div');
-    pad.className='pad';
-    pad.innerHTML = `
-      <div class="ghost"></div>
-      <button class="btn" data-key="ArrowUp" aria-label="Up">▲</button>
-      <div class="ghost"></div>
-      <button class="btn" data-key="ArrowLeft" aria-label="Left">◀</button>
-      <div class="ghost"></div>
-      <button class="btn" data-key="ArrowRight" aria-label="Right">▶</button>
-      <div class="ghost"></div>
-      <button class="btn" data-key="ArrowDown" aria-label="Down">▼</button>
-      <div class="ghost"></div>`;
-    pad.querySelectorAll('.btn[data-key]').forEach(el=>{
-      const code = el.getAttribute('data-key');
-      const press = e=>{ e.preventDefault(); ensureAudio(); keys[code]=true; };
-      const release = e=>{ e.preventDefault(); keys[code]=false; };
-      el.addEventListener('touchstart', press, {passive:false});
-      el.addEventListener('touchend', release, {passive:false});
-      el.addEventListener('touchcancel', release, {passive:false});
-      el.addEventListener('mousedown', press);
-      el.addEventListener('mouseup', release);
-      el.addEventListener('mouseleave', release);
-    });
-    return pad;
-  }
-
-  // Joystick builder (analog thrust/steer)
-  let joy = {x:0, y:0, active:false};
-  function buildStick(){
-    const pad = document.createElement('div');
-    pad.className='stickpad';
-    const knob = document.createElement('div');
-    knob.className='stick'; knob.textContent='⛵️';
-    pad.appendChild(knob);
-
-    const rect = ()=>pad.getBoundingClientRect();
-    function setFrom(evt){
-      const r=rect();
-      const t = (evt.touches && evt.touches[0]) || evt;
-      const cx = r.left + r.width/2, cy = r.top + r.height/2;
-      let dx = (t.clientX - cx), dy = (t.clientY - cy);
-      const max = r.width*0.42, m = Math.hypot(dx,dy);
-      if (m>max){ dx*=max/m; dy*=max/m; }
-      knob.style.transform = `translate(${dx}px,${dy}px)`;
-      joy.x = dx/max; joy.y = dy/max; joy.active = true;
-      ensureAudio();
-    }
-    function reset(){
-      knob.style.transform = `translate(0px,0px)`;
-      joy.x=0; joy.y=0; joy.active=false;
-    }
-    pad.addEventListener('touchstart', e=>{ e.preventDefault(); setFrom(e); }, {passive:false});
-    pad.addEventListener('touchmove',  e=>{ e.preventDefault(); setFrom(e); }, {passive:false});
-    pad.addEventListener('touchend',   e=>{ e.preventDefault(); reset(); }, {passive:false});
-    pad.addEventListener('mousedown',  e=>{ e.preventDefault(); setFrom(e); });
-    pad.addEventListener('mousemove',  e=>{ if(e.buttons) setFrom(e); });
-    pad.addEventListener('mouseup',    e=>{ reset(); });
-    pad.addEventListener('mouseleave', e=>{ reset(); });
-    return pad;
-  }
-
-  // Build left dock based on config + toggle button
-  const leftDock = document.getElementById('leftDock');
-  let mode = (cfg.control || 'dpad'); // 'dpad' | 'joystick'
-  const modeBtn = document.getElementById('mode');
-  function renderLeft(){
-    leftDock.innerHTML = '';
-    if (mode==='dpad'){
-      leftDock.appendChild(buildDpad());
-      modeBtn.textContent = 'Switch to Joystick';
-    } else {
-      leftDock.appendChild(buildStick());
-      modeBtn.textContent = 'Switch to D-pad';
+  // Safeguard runner: shows an error bubble if anything throws and retries once.
+  const errBox = document.getElementById('err');
+  function safe(fn){
+    try { fn(); }
+    catch(e){
+      console.error(e);
+      if (errBox){ errBox.style.display = 'block'; setTimeout(()=>location.reload(), 300); }
     }
   }
-  modeBtn.addEventListener('click', ()=>{ mode = (mode==='dpad' ? 'joystick' : 'dpad'); renderLeft(); ensureAudio(); beep(440,80,'triangle',0.02); });
-  renderLeft();
 
-  // Lamp toggle + restart
-  const lampBtn = document.getElementById('lamp');
-  lampBtn.addEventListener('click', e=>{ e.preventDefault(); ensureAudio(); keys['KeyT'] = !keys['KeyT']; lampBtn.style.transform='scale(0.98)'; setTimeout(()=>lampBtn.style.transform='', 120); beep(keys['KeyT']?760:520,80,'sine',0.03); });
-  document.getElementById('reset').addEventListener('click', e=>{ e.preventDefault(); state = spawn(); vibrate(25); beep(380,80,'square',0.035); });
+  safe(() => {
+    // --- Config + Audio + Haptics ---
+    const cfg = JSON.parse(document.getElementById('cfg').textContent || "{}");
+    let audioCtx, muted=false;
+    function ensureAudio(){ if(!audioCtx){ const AC=window.AudioContext||window.webkitAudioContext; audioCtx = AC? new AC(): null; } if(audioCtx && audioCtx.state==='suspended') audioCtx.resume(); }
+    function beep(freq=660, dur=100, type='sine', gain=0.05){
+      if(muted || !audioCtx) return;
+      const o=audioCtx.createOscillator(), g=audioCtx.createGain();
+      o.type=type; o.frequency.value=freq; g.gain.value=gain;
+      o.connect(g); g.connect(audioCtx.destination);
+      o.start(); setTimeout(()=>o.stop(), dur);
+    }
+    function vibrate(ms=20){ if(navigator.vibrate) try{ navigator.vibrate(ms); }catch{} }
 
-  // Loop
-  let last = performance.now();
-  function loop(t){
-    const dt = Math.min(0.032,(t-last)/1000); last=t;
-    update(dt); draw();
-    requestAnimationFrame(loop);
-  }
-  requestAnimationFrame(loop);
+    const muteBtn = document.getElementById('mute');
+    muteBtn.addEventListener('click', ()=>{ ensureAudio(); muted=!muted; muteBtn.textContent = muted? '🔇':'🔈'; beep(330,80,'square',0.03); });
 
-  function update(dt){
-    const boat = state.boat;
+    // --- Canvas & sizing ---
+    const canvas = document.getElementById('game');
+    const ctx = canvas.getContext('2d');
+    const W = canvas.width, H = canvas.height;
+    const rand=(a,b)=>a+Math.random()*(b-a);
 
-    // From joystick OR keys
-    let thrust = 0, steer = 0, brake = 0;
-    if (mode==='joystick' && joy.active){
-      const forward = Math.max(0, -joy.y); // 0..1 (up is negative y)
-      thrust = 100 * forward;
-      steer  = joy.x;                      // -1..1
-    } else {
-      thrust = keys['ArrowUp'] ? 100 : 0;
-      brake  = keys['ArrowDown'] ? 60 : 0;
-      steer  = (keys['ArrowLeft'] ? -1 : 0) + (keys['ArrowRight'] ? 1 : 0);
+    function fit(){
+      // Wait a tick for layout to settle on mobile iframes
+      const run = () => {
+        const r = canvas.width / canvas.height;
+        const box = document.getElementById('pond').getBoundingClientRect();
+        let w = box.width, h = box.height;
+        if (w/h > r) w = h * r; else h = w / r;
+        canvas.style.width = w + 'px';
+        canvas.style.height = h + 'px';
+      };
+      requestAnimationFrame(run);
+    }
+    addEventListener('resize', fit); fit();
+
+    // --- State ---
+    function spawn(){
+      return {
+        boat:{ x:W*0.15, y:H*0.5, v:0, a:0, r:0, lamp:false },
+        buoys:Array.from({length: cfg.buoy_count || 14}, ()=>({x:rand(W*0.25,W*0.9),y:rand(H*0.1,H*0.9),r:16,hue:rand(0,360)})),
+        reeds:Array.from({length: cfg.reeds_count || 18}, ()=>({x:rand(W*0.2,W*0.95),y:rand(H*0.1,H*0.9),r:24})),
+        score:0, won:false, goal:cfg.buoy_goal || 10, max_speed:cfg.max_speed || 240, drag:cfg.drag || 0.6
+      };
+    }
+    let state = spawn();
+
+    // --- Input: keyboard + virtual ---
+    const keys={}; addEventListener('keydown', e=>{ keys[e.code]=true; ensureAudio(); }); addEventListener('keyup', e=>{ keys[e.code]=false; });
+
+    // D-pad builder (press-and-hold)
+    function buildDpad(){
+      const pad = document.createElement('div');
+      pad.className='pad';
+      pad.innerHTML = `
+        <div class="ghost"></div>
+        <button class="btn" data-key="ArrowUp" aria-label="Up">▲</button>
+        <div class="ghost"></div>
+        <button class="btn" data-key="ArrowLeft" aria-label="Left">◀</button>
+        <div class="ghost"></div>
+        <button class="btn" data-key="ArrowRight" aria-label="Right">▶</button>
+        <div class="ghost"></div>
+        <button class="btn" data-key="ArrowDown" aria-label="Down">▼</button>
+        <div class="ghost"></div>`;
+      pad.querySelectorAll('.btn[data-key]').forEach(el=>{
+        const code = el.getAttribute('data-key');
+        const press = e=>{ e.preventDefault(); ensureAudio(); keys[code]=true; };
+        const release = e=>{ e.preventDefault(); keys[code]=false; };
+        el.addEventListener('touchstart', press, {passive:false});
+        el.addEventListener('touchend', release, {passive:false});
+        el.addEventListener('touchcancel', release, {passive:false});
+        el.addEventListener('mousedown', press);
+        el.addEventListener('mouseup', release);
+        el.addEventListener('mouseleave', release);
+      });
+      return pad;
     }
 
-    const turn = steer * (0.9 - Math.min(0.6, boat.v/200));
-    boat.a = thrust - brake - boat.v*state.drag;
-    boat.v += boat.a * dt;
-    boat.v = Math.max(0, Math.min(state.max_speed, boat.v));
+    // Joystick builder (analog thrust/steer)
+    let joy = {x:0, y:0, active:false};
+    function buildStick(){
+      const pad = document.createElement('div');
+      pad.className='stickpad';
+      const knob = document.createElement('div');
+      knob.className='stick'; knob.textContent='⛵️';
+      pad.appendChild(knob);
 
-    boat.r += turn * dt;
-    boat.x += Math.cos(boat.r) * boat.v * dt;
-    boat.y += Math.sin(boat.r) * boat.v * dt;
-
-    // bounds
-    const bounce = 0.4;
-    if (boat.x<30){boat.x=30; boat.r = Math.PI - boat.r; boat.v*=bounce;}
-    if (boat.x>W-30){boat.x=W-30; boat.r = Math.PI - boat.r; boat.v*=bounce;}
-    if (boat.y<30){boat.y=30; boat.r = -boat.r; boat.v*=bounce;}
-    if (boat.y>H-30){boat.y=H-30; boat.r = -boat.r; boat.v*=bounce;}
-
-    boat.lamp = !!keys['KeyT'];
-
-    // reeds slow
-    for (const r of state.reeds){
-      const d=Math.hypot(boat.x-r.x,boat.y-r.y);
-      if (d < r.r + 18) boat.v *= 0.965;
+      const rect = ()=>pad.getBoundingClientRect();
+      function setFrom(evt){
+        const r=rect();
+        const t = (evt.touches && evt.touches[0]) || evt;
+        const cx = r.left + r.width/2, cy = r.top + r.height/2;
+        let dx = (t.clientX - cx), dy = (t.clientY - cy);
+        const max = r.width*0.42, m = Math.hypot(dx,dy);
+        if (m>max){ dx*=max/m; dy*=max/m; }
+        knob.style.transform = `translate(${dx}px,${dy}px)`;
+        joy.x = dx/max; joy.y = dy/max; joy.active = true;
+        ensureAudio();
+      }
+      function reset(){
+        knob.style.transform = `translate(0px,0px)`;
+        joy.x=0; joy.y=0; joy.active=false;
+      }
+      pad.addEventListener('touchstart', e=>{ e.preventDefault(); setFrom(e); }, {passive:false});
+      pad.addEventListener('touchmove',  e=>{ e.preventDefault(); setFrom(e); }, {passive:false});
+      pad.addEventListener('touchend',   e=>{ e.preventDefault(); reset(); }, {passive:false});
+      pad.addEventListener('mousedown',  e=>{ e.preventDefault(); setFrom(e); });
+      pad.addEventListener('mousemove',  e=>{ if(e.buttons) setFrom(e); });
+      pad.addEventListener('mouseup',    e=>{ reset(); });
+      pad.addEventListener('mouseleave', e=>{ reset(); });
+      return pad;
     }
 
-    // collect buoys
-    for (let i=state.buoys.length-1;i>=0;i--){
-      const b=state.buoys[i];
-      const d=Math.hypot(boat.x-b.x, boat.y-b.y);
-      if (d < b.r + 16){
-        state.buoys.splice(i,1);
-        state.score++;
-        vibrate(18); ensureAudio();
-        beep(740,70,'sine',0.035); setTimeout(()=>beep(880,80,'triangle',0.03),80);
-        if (state.score>=state.goal){
-          state.won=true;
-          vibrate(80); setTimeout(()=>vibrate(80),120);
-          setTimeout(()=>{ beep(523,120,'sine',0.03); setTimeout(()=>beep(659,140,'sine',0.03),130); setTimeout(()=>beep(784,180,'sine',0.03),300); }, 80);
+    // Build left dock based on config + toggle button
+    const leftDock = document.getElementById('leftDock');
+    let mode = (cfg.control || 'dpad'); // 'dpad' | 'joystick'
+    const modeBtn = document.getElementById('mode');
+    function renderLeft(){
+      leftDock.innerHTML = '';
+      if (mode==='dpad'){
+        leftDock.appendChild(buildDpad());
+        modeBtn.textContent = 'Switch to Joystick';
+      } else {
+        leftDock.appendChild(buildStick());
+        modeBtn.textContent = 'Switch to D-pad';
+      }
+    }
+    modeBtn.addEventListener('click', ()=>{ mode = (mode==='dpad' ? 'joystick' : 'dpad'); renderLeft(); ensureAudio(); beep(440,80,'triangle',0.02); });
+    renderLeft();
+
+    // Lamp toggle + restart
+    const lampBtn = document.getElementById('lamp');
+    lampBtn.addEventListener('click', e=>{ e.preventDefault(); ensureAudio(); keys['KeyT'] = !keys['KeyT']; lampBtn.style.transform='scale(0.98)'; setTimeout(()=>lampBtn.style.transform='', 120); beep(keys['KeyT']?760:520,80,'sine',0.03); });
+    document.getElementById('reset').addEventListener('click', e=>{ e.preventDefault(); state = spawn(); vibrate(25); beep(380,80,'square',0.035); draw(); });
+
+    // --- Game update/draw ---
+    function update(dt){
+      const boat = state.boat;
+
+      // From joystick OR keys
+      let thrust = 0, steer = 0, brake = 0;
+      if (mode==='joystick' && joy.active){
+        const forward = Math.max(0, -joy.y); // 0..1 (up is negative y)
+        thrust = 100 * forward;
+        steer  = joy.x;                      // -1..1
+      } else {
+        thrust = keys['ArrowUp'] ? 100 : 0;
+        brake  = keys['ArrowDown'] ? 60 : 0;
+        steer  = (keys['ArrowLeft'] ? -1 : 0) + (keys['ArrowRight'] ? 1 : 0);
+      }
+
+      const turn = steer * (0.9 - Math.min(0.6, boat.v/200));
+      boat.a = thrust - brake - boat.v*state.drag;
+      boat.v += boat.a * dt;
+      boat.v = Math.max(0, Math.min(state.max_speed, boat.v));
+
+      boat.r += turn * dt;
+      boat.x += Math.cos(boat.r) * boat.v * dt;
+      boat.y += Math.sin(boat.r) * boat.v * dt;
+
+      // bounds
+      const bounce = 0.4;
+      if (boat.x<30){boat.x=30; boat.r = Math.PI - boat.r; boat.v*=bounce;}
+      if (boat.x>W-30){boat.x=W-30; boat.r = Math.PI - boat.r; boat.v*=bounce;}
+      if (boat.y<30){boat.y=30; boat.r = -boat.r; boat.v*=bounce;}
+      if (boat.y>H-30){boat.y=H-30; boat.r = -boat.r; boat.v*=bounce;}
+
+      boat.lamp = !!keys['KeyT'];
+
+      // reeds slow
+      for (const r of state.reeds){
+        const d=Math.hypot(boat.x-r.x,boat.y-r.y);
+        if (d < r.r + 18) boat.v *= 0.965;
+      }
+
+      // collect buoys
+      for (let i=state.buoys.length-1;i>=0;i--){
+        const b=state.buoys[i];
+        const d=Math.hypot(boat.x-b.x, boat.y-b.y);
+        if (d < b.r + 16){
+          state.buoys.splice(i,1);
+          state.score++;
+          vibrate(18); ensureAudio();
+          beep(740,70,'sine',0.035); setTimeout(()=>beep(880,80,'triangle',0.03),80);
+          if (state.score>=state.goal){
+            state.won=true;
+            vibrate(80); setTimeout(()=>vibrate(80),120);
+            setTimeout(()=>{ beep(523,120,'sine',0.03); setTimeout(()=>beep(659,140,'sine',0.03),130); setTimeout(()=>beep(784,180,'sine',0.03),300); }, 80);
+          }
         }
+      }
+
+      // HUD
+      document.getElementById('score').textContent = Math.min(state.score, state.goal);
+      document.getElementById('goal').textContent = state.goal;
+      document.getElementById('spd').textContent = (boat.v/30).toFixed(1);
+    }
+
+    function draw(){
+      const boat = state.boat;
+      ctx.clearRect(0,0,W,H);
+
+      // ripples
+      for (let i=0;i<5;i++){
+        ctx.fillStyle = `rgba(255,255,255,${0.06 - i*0.01})`;
+        ctx.beginPath(); ctx.ellipse(boat.x, boat.y, 80+i*28, 40+i*18, boat.r, 0, Math.PI*2); ctx.fill();
+      }
+
+      // buoys
+      for (const b of state.buoys){
+        ctx.fillStyle = `hsl(${b.hue},90%,55%)`;
+        ctx.beginPath(); ctx.arc(b.x,b.y,b.r,0,Math.PI*2); ctx.fill();
+        ctx.fillStyle = "#fff"; ctx.beginPath(); ctx.arc(b.x,b.y,b.r*0.55,0,Math.PI*2); ctx.fill();
+      }
+
+      // reeds
+      for (const r of state.reeds){
+        ctx.strokeStyle = "#0b7e2a"; ctx.lineWidth = 3;
+        ctx.beginPath(); ctx.moveTo(r.x, r.y+r.r-6);
+        ctx.quadraticCurveTo(r.x+6, r.y-r.r*0.6, r.x, r.y-r.r-6);
+        ctx.stroke();
+      }
+
+      // boat
+      ctx.save(); ctx.translate(boat.x,boat.y); ctx.rotate(boat.r);
+      const hullGrad = ctx.createLinearGradient(-28,0,28,0);
+      hullGrad.addColorStop(0,"#111"); hullGrad.addColorStop(1,"#444");
+      ctx.fillStyle = hullGrad; ctx.strokeStyle="#ffffffcc"; ctx.lineWidth=3;
+      ctx.beginPath();
+      ctx.moveTo(28,0); ctx.quadraticCurveTo(14,12,-18,14);
+      ctx.quadraticCurveTo(-24,0,-18,-14);
+      ctx.quadraticCurveTo(14,-12,28,0);
+      ctx.closePath(); ctx.fill(); ctx.stroke();
+
+      // royal blue stripe + lamp
+      ctx.fillStyle = "#4169e1"; ctx.fillRect(-10,-3,20,6);
+      if (boat.lamp){
+        const g = ctx.createRadialGradient(18,0,0,18,0,36);
+        g.addColorStop(0,"rgba(65,105,225,.9)");
+        g.addColorStop(1,"rgba(65,105,225,0)");
+        ctx.fillStyle=g; ctx.beginPath(); ctx.arc(18,0,36,0,Math.PI*2); ctx.fill();
+      }
+      ctx.fillStyle = boat.lamp ? "#4169e1" : "#ccc";
+      ctx.beginPath(); ctx.arc(18,0,6,0,Math.PI*2); ctx.fill();
+      ctx.restore();
+
+      // win banner — just "Victory"
+      if (state.won){
+        ctx.fillStyle="rgba(255,255,255,.86)";
+        ctx.fillRect(W*0.2,H*0.4,W*0.6,110);
+        ctx.strokeStyle="#0002"; ctx.lineWidth=6; ctx.strokeRect(W*0.2,H*0.4,W*0.6,110);
+        ctx.fillStyle="#111"; ctx.font="bold 30px system-ui";
+        ctx.fillText("Victory", W*0.45, H*0.4+60);
       }
     }
 
-    // HUD
-    document.getElementById('score').textContent = Math.min(state.score, state.goal);
-    document.getElementById('goal').textContent = state.goal;
-    document.getElementById('spd').textContent = (boat.v/30).toFixed(1);
-  }
+    // Draw once immediately so the boat appears even if rAF is delayed
+    draw();
 
-  function draw(){
-    const boat = state.boat;
-    ctx.clearRect(0,0,W,H);
-
-    // ripples
-    for (let i=0;i<5;i++){
-      ctx.fillStyle = `rgba(255,255,255,${0.06 - i*0.01})`;
-      ctx.beginPath(); ctx.ellipse(boat.x, boat.y, 80+i*28, 40+i*18, boat.r, 0, Math.PI*2); ctx.fill();
+    // Loop (safe)
+    let last = performance.now();
+    function tick(t){
+      const dt = Math.min(0.032,(t-last)/1000); last=t;
+      update(dt); draw(); requestAnimationFrame(tick);
     }
+    requestAnimationFrame(tick);
 
-    // buoys
-    for (const b of state.buoys){
-      ctx.fillStyle = `hsl(${b.hue},90%,55%)`;
-      ctx.beginPath(); ctx.arc(b.x,b.y,b.r,0,Math.PI*2); ctx.fill();
-      ctx.fillStyle = "#fff"; ctx.beginPath(); ctx.arc(b.x,b.y,b.r*0.55,0,Math.PI*2); ctx.fill();
-    }
-
-    // reeds
-    for (const r of state.reeds){
-      ctx.strokeStyle = "#0b7e2a"; ctx.lineWidth = 3;
-      ctx.beginPath(); ctx.moveTo(r.x, r.y+r.r-6);
-      ctx.quadraticCurveTo(r.x+6, r.y-r.r*0.6, r.x, r.y-r.r-6);
-      ctx.stroke();
-    }
-
-    // boat
-    ctx.save(); ctx.translate(boat.x,boat.y); ctx.rotate(boat.r);
-    const hullGrad = ctx.createLinearGradient(-28,0,28,0);
-    hullGrad.addColorStop(0,"#111"); hullGrad.addColorStop(1,"#444");
-    ctx.fillStyle = hullGrad; ctx.strokeStyle="#ffffffcc"; ctx.lineWidth=3;
-    ctx.beginPath();
-    ctx.moveTo(28,0); ctx.quadraticCurveTo(14,12,-18,14);
-    ctx.quadraticCurveTo(-24,0,-18,-14);
-    ctx.quadraticCurveTo(14,-12,28,0);
-    ctx.closePath(); ctx.fill(); ctx.stroke();
-
-    // royal blue stripe + lamp
-    ctx.fillStyle = "#4169e1"; ctx.fillRect(-10,-3,20,6);
-    if (boat.lamp){
-      const g = ctx.createRadialGradient(18,0,0,18,0,36);
-      g.addColorStop(0,"rgba(65,105,225,.9)");
-      g.addColorStop(1,"rgba(65,105,225,0)");
-      ctx.fillStyle=g; ctx.beginPath(); ctx.arc(18,0,36,0,Math.PI*2); ctx.fill();
-    }
-    ctx.fillStyle = boat.lamp ? "#4169e1" : "#ccc";
-    ctx.beginPath(); ctx.arc(18,0,6,0,Math.PI*2); ctx.fill();
-    ctx.restore();
-
-    // win banner — just "Victory"
-    if (state.won){
-      ctx.fillStyle="rgba(255,255,255,.86)";
-      ctx.fillRect(W*0.2,H*0.4,W*0.6,110);
-      ctx.strokeStyle="#0002"; ctx.lineWidth=6; ctx.strokeRect(W*0.2,H*0.4,W*0.6,110);
-      ctx.fillStyle="#111"; ctx.font="bold 30px system-ui";
-      ctx.fillText("Victory", W*0.45, H*0.4+60);
-    }
-  }
-
-  // Start loop
-  let last=performance.now(); function tick(t){ const dt=Math.min(0.032,(t-last)/1000); last=t; update(dt); draw(); requestAnimationFrame(tick);} requestAnimationFrame(tick);
-
-  // Actions
-  document.getElementById('lamp').addEventListener('click',()=>{ ensureAudio(); keys['KeyT']=!keys['KeyT']; });
-  document.getElementById('reset').addEventListener('click',()=>{ state=spawn(); });
+    // Actions
+    document.getElementById('lamp').addEventListener('click',()=>{ ensureAudio(); keys['KeyT']=!keys['KeyT']; });
+    document.getElementById('reset').addEventListener('click',()=>{ state=spawn(); draw(); });
+  });
 })();
 </script>
 </body>
@@ -410,4 +430,4 @@ HTML = r"""
 """
 
 # Inject config and render
-components.html(HTML.replace("__CFG_JSON__", json.dumps(cfg)), height=780, scrolling=False)
+components.html(HTML.replace("__CFG_JSON__", json.dumps(cfg)), height=800, scrolling=False)
