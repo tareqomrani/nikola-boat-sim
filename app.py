@@ -1,5 +1,6 @@
 # tesla_toy_boat_streamlit.py
-# Tesla’s Toy Boat — Royal Blue • Mobile-friendly + Joystick + Haptics + SFX
+# Tesla’s Toy Boat — Royal Blue • Mobile-friendly + D-pad/Joystick switcher + Haptics + SFX
+# HUD pinned bottom-right inside the pond.
 # Run: streamlit run tesla_toy_boat_streamlit.py
 
 import json
@@ -8,7 +9,7 @@ import streamlit.components.v1 as components
 
 st.set_page_config(page_title="Tesla’s Toy Boat", page_icon="⛵️", layout="wide")
 
-# Sidebar tuning (game reads these via injected JSON)
+# Sidebar tuning
 st.sidebar.header("⛵️ Game Settings")
 buoy_goal = st.sidebar.slider("Buoy goal (win condition)", 5, 25, 10, 1)
 buoy_count = st.sidebar.slider("Total buoys spawned", buoy_goal, 40, max(14, buoy_goal), 1)
@@ -40,19 +41,21 @@ HTML = r"""
   header{display:flex;justify-content:space-between;align-items:center;gap:.6rem;padding:.6rem 1rem;background:linear-gradient(90deg,#fff8,var(--royal) 70%,#fff8);border-bottom:2px solid #0002}
   header h1{font-size:1.15rem;margin:0;color:var(--royal)}
   .pill{font-size:.9rem;padding:.2rem .6rem;border-radius:999px;background:#00000010;border:1px solid #0002}
+
   #pond{border:4px solid #ffffffaa;border-radius:16px;position:relative;overflow:hidden;min-height:420px;max-width:1200px;margin:.25rem auto 5.5rem auto}
   canvas{display:block;width:100%;height:100%}
   .hint{color:#000a;text-align:center;padding:.4rem 0}
 
-  /* HUD is now inside the pond to avoid overlapping header/buttons */
+  /* HUD bottom-right inside pond */
   .hud{
-    position:absolute; right:.75rem; top:.75rem; z-index:2;
+    position:absolute; right:.75rem; bottom:.75rem; z-index:2;
     background:#ffffffee; border:2px solid #0002; border-radius:12px; padding:.4rem .6rem;
-    display:flex; gap:.7rem; align-items:center; box-shadow:0 4px 0 #0001; font-weight:700; pointer-events:none;
+    display:flex; gap:.7rem; align-items:center; box-shadow:0 4px 0 #0001; font-weight:700;
+    pointer-events:none;
   }
   .hud div{white-space:nowrap}
 
-  /* Dock */
+  /* Control Dock */
   .dock{
     position:fixed; left:0; right:0; bottom:0;
     display:flex; justify-content:space-between; align-items:center;
@@ -106,8 +109,6 @@ HTML = r"""
 
   <div id="pond">
     <canvas id="game" width="1280" height="720" aria-label="Pond"></canvas>
-
-    <!-- HUD lives inside the pond now -->
     <div class="hud" id="hud">
       <div>Score: <span id="score">0</span>/<span id="goal">10</span></div>
       <div>Speed: <span id="spd">0.0</span> m/s</div>
@@ -118,10 +119,10 @@ HTML = r"""
 
   <!-- Control Dock -->
   <div class="dock">
-    <!-- Left area: either D-pad or Joystick -->
+    <!-- Left: D-pad or Joystick (switchable) -->
     <div id="leftDock"></div>
 
-    <!-- Actions -->
+    <!-- Right: actions -->
     <div class="col">
       <button class="btn widebtn" id="lamp" data-key="KeyT">💡 Lamp</button>
       <div class="row">
@@ -132,15 +133,14 @@ HTML = r"""
   </div>
 </div>
 
-<!-- Config JSON -->
 <script id="cfg" type="application/json">__CFG_JSON__</script>
 
 <script>
 (() => {
-  // --- Config + Audio bootstrap ---
+  // --- Config + Audio + Haptics ---
   const cfg = JSON.parse(document.getElementById('cfg').textContent || "{}");
   let audioCtx, muted=false;
-  function ensureAudio(){ if(!audioCtx){ const AC = window.AudioContext||window.webkitAudioContext; audioCtx = AC? new AC(): null; } if(audioCtx && audioCtx.state==='suspended') audioCtx.resume(); }
+  function ensureAudio(){ if(!audioCtx){ const AC=window.AudioContext||window.webkitAudioContext; audioCtx = AC? new AC(): null; } if(audioCtx && audioCtx.state==='suspended') audioCtx.resume(); }
   function beep(freq=660, dur=100, type='sine', gain=0.05){
     if(muted || !audioCtx) return;
     const o=audioCtx.createOscillator(), g=audioCtx.createGain();
@@ -150,11 +150,10 @@ HTML = r"""
   }
   function vibrate(ms=20){ if(navigator.vibrate) try{ navigator.vibrate(ms); }catch{} }
 
-  // Toggle mute
   const muteBtn = document.getElementById('mute');
   muteBtn.addEventListener('click', ()=>{ ensureAudio(); muted=!muted; muteBtn.textContent = muted? '🔇':'🔈'; beep(330,80,'square',0.03); });
 
-  // --- Canvas setup ---
+  // --- Canvas & sizing ---
   const canvas = document.getElementById('game');
   const ctx = canvas.getContext('2d');
   const W=canvas.width, H=canvas.height;
@@ -170,7 +169,7 @@ HTML = r"""
   }
   addEventListener('resize', fit); fit();
 
-  // --- Game state ---
+  // --- State ---
   function spawn(){
     return {
       boat:{ x:W*0.15, y:H*0.5, v:0, a:0, r:0, lamp:false },
@@ -181,12 +180,10 @@ HTML = r"""
   }
   let state = spawn();
 
-  // --- Input (keyboard + virtual) ---
-  const keys = {};
-  addEventListener('keydown', e=>{ keys[e.code]=true; ensureAudio(); });
-  addEventListener('keyup',   e=>{ keys[e.code]=false; });
+  // --- Input: keyboard + virtual ---
+  const keys={}; addEventListener('keydown', e=>{ keys[e.code]=true; ensureAudio(); }); addEventListener('keyup', e=>{ keys[e.code]=false; });
 
-  // D-pad builder
+  // D-pad builder (press-and-hold)
   function buildDpad(){
     const pad = document.createElement('div');
     pad.className='pad';
@@ -200,7 +197,6 @@ HTML = r"""
       <div class="ghost"></div>
       <button class="btn" data-key="ArrowDown" aria-label="Down">▼</button>
       <div class="ghost"></div>`;
-    // bind hold
     pad.querySelectorAll('.btn[data-key]').forEach(el=>{
       const code = el.getAttribute('data-key');
       const press = e=>{ e.preventDefault(); ensureAudio(); keys[code]=true; };
@@ -215,7 +211,7 @@ HTML = r"""
     return pad;
   }
 
-  // Joystick builder
+  // Joystick builder (analog thrust/steer)
   let joy = {x:0, y:0, active:false};
   function buildStick(){
     const pad = document.createElement('div');
@@ -250,7 +246,7 @@ HTML = r"""
     return pad;
   }
 
-  // Build left dock based on config + provide toggle
+  // Build left dock based on config + toggle button
   const leftDock = document.getElementById('leftDock');
   let mode = (cfg.control || 'dpad'); // 'dpad' | 'joystick'
   const modeBtn = document.getElementById('mode');
@@ -264,7 +260,7 @@ HTML = r"""
       modeBtn.textContent = 'Switch to D-pad';
     }
   }
-  modeBtn.addEventListener('click', ()=>{ mode = (mode==='dpad'?'joystick':'dpad'); renderLeft(); ensureAudio(); beep(440,80,'triangle',0.02); });
+  modeBtn.addEventListener('click', ()=>{ mode = (mode==='dpad' ? 'joystick' : 'dpad'); renderLeft(); ensureAudio(); beep(440,80,'triangle',0.02); });
   renderLeft();
 
   // Lamp toggle + restart
@@ -287,7 +283,7 @@ HTML = r"""
     // From joystick OR keys
     let thrust = 0, steer = 0, brake = 0;
     if (mode==='joystick' && joy.active){
-      const forward = Math.max(0, -joy.y); // 0..1
+      const forward = Math.max(0, -joy.y); // 0..1 (up is negative y)
       thrust = 100 * forward;
       steer  = joy.x;                      // -1..1
     } else {
@@ -300,6 +296,7 @@ HTML = r"""
     boat.a = thrust - brake - boat.v*state.drag;
     boat.v += boat.a * dt;
     boat.v = Math.max(0, Math.min(state.max_speed, boat.v));
+
     boat.r += turn * dt;
     boat.x += Math.cos(boat.r) * boat.v * dt;
     boat.y += Math.sin(boat.r) * boat.v * dt;
@@ -326,8 +323,8 @@ HTML = r"""
       if (d < b.r + 16){
         state.buoys.splice(i,1);
         state.score++;
-        vibrate(18);
-        ensureAudio(); beep(740,70,'sine',0.035); setTimeout(()=>beep(880,80,'triangle',0.03),80);
+        vibrate(18); ensureAudio();
+        beep(740,70,'sine',0.035); setTimeout(()=>beep(880,80,'triangle',0.03),80);
         if (state.score>=state.goal){
           state.won=true;
           vibrate(80); setTimeout(()=>vibrate(80),120);
@@ -336,7 +333,7 @@ HTML = r"""
       }
     }
 
-    // HUD updates (now inside pond)
+    // HUD
     document.getElementById('score').textContent = Math.min(state.score, state.goal);
     document.getElementById('goal').textContent = state.goal;
     document.getElementById('spd').textContent = (boat.v/30).toFixed(1);
@@ -378,10 +375,8 @@ HTML = r"""
     ctx.quadraticCurveTo(14,-12,28,0);
     ctx.closePath(); ctx.fill(); ctx.stroke();
 
-    // royal blue deck stripe
+    // royal blue stripe + lamp
     ctx.fillStyle = "#4169e1"; ctx.fillRect(-10,-3,20,6);
-
-    // lamp + glow
     if (boat.lamp){
       const g = ctx.createRadialGradient(18,0,0,18,0,36);
       g.addColorStop(0,"rgba(65,105,225,.9)");
@@ -392,7 +387,7 @@ HTML = r"""
     ctx.beginPath(); ctx.arc(18,0,6,0,Math.PI*2); ctx.fill();
     ctx.restore();
 
-    // win banner — text changed to just "Victory"
+    // win banner — just "Victory"
     if (state.won){
       ctx.fillStyle="rgba(255,255,255,.86)";
       ctx.fillRect(W*0.2,H*0.4,W*0.6,110);
@@ -401,6 +396,13 @@ HTML = r"""
       ctx.fillText("Victory", W*0.45, H*0.4+60);
     }
   }
+
+  // Start loop
+  let last=performance.now(); function tick(t){ const dt=Math.min(0.032,(t-last)/1000); last=t; update(dt); draw(); requestAnimationFrame(tick);} requestAnimationFrame(tick);
+
+  // Actions
+  document.getElementById('lamp').addEventListener('click',()=>{ ensureAudio(); keys['KeyT']=!keys['KeyT']; });
+  document.getElementById('reset').addEventListener('click',()=>{ state=spawn(); });
 })();
 </script>
 </body>
