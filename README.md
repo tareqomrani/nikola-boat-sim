@@ -1,62 +1,52 @@
+Tesla’s Toy Boat ⛵️
 
-# 🚤 Tesla's Toy Boat Simulator
+A playful Streamlit app inspired by Nikola Tesla’s 1898 radio-controlled boat
 
-A **fun**, **colorful**, and **educational** Streamlit app that simulates Nikola Tesla's 1898 remote-control boat — built with modern tools but inspired by the **first-ever radio-controlled invention**! 📡
+⸻
 
-![Tesla Toy Boat Banner](tesla-banner.jpg)
+📖 About
 
----
+This project is a fun, interactive simulation of Tesla’s Toy Boat, built with Streamlit and modern web technologies. You pilot a small boat around a pond, collecting colorful buoys while avoiding reeds.
 
-## 🌟 Features
+The app is designed to be:
+	•	Playful & colorful – a lighthearted tribute to Tesla’s invention.
+	•	Mobile-friendly – with on-screen D-pad or Joystick controls.
+	•	Immersive – complete with sounds, haptics (on supported devices), and a glowing lamp beam.
 
-- 🎮 **Manual Controls**: Adjust rudder (left/center/right) and throttle (0–100%)
-- 🤖 **Demo Mode**: Watch the boat follow an autonomous demo path
-- 🔊 **Sound Effects**: Hear the engine pulse as it moves
-- 🗺️ **Path Mapping**: Visual 2D map of demo path travel
-- 🎨 **Boat Customization**: Choose your toy boat’s color
-- 🎥 **Animated Boat**: Fun speedboat sprite with ripple effect
+⸻
 
----
+✨ Features
+	•	Sidebar controls
+	•	Buoy goal (win condition).
+	•	Total buoys and reeds (hazards).
+	•	Boat max speed and water drag.
+	•	Control mode: D-pad or Joystick.
+	•	On-screen HUD
+	•	Score and speed display pinned bottom-right in the pond.
+	•	Victory banner when you win.
+	•	Controls
+	•	Arrow keys on desktop.
+	•	On-screen D-pad or Joystick (switchable).
+	•	Lamp button:
+	•	Tap to toggle ON/OFF.
+	•	Press & hold to keep it ON while held.
+	•	Keyboard T also toggles.
+	•	Restart button resets the game.
+	•	Mute/Unmute toggle for sound.
+	•	Effects
+	•	Lamp glow with a bright halo and forward beam.
+	•	Water ripples around the boat.
+	•	Haptic buzz + beep when collecting buoys (if supported).
 
-## 🚀 Getting Started
+🎮 Gameplay
+	•	Navigate the boat to collect all buoys.
+	•	Avoid reeds (they slow you down).
+	•	Toggle the Lamp to light your way.
+	•	Reach the buoy goal to achieve Victory!
 
-### 1. Install Dependencies
-```bash
-pip install streamlit matplotlib pandas
-```
+⸻
 
-### 2. Run the App
-```bash
-streamlit run app.py
-```
-
----
-
-## 📂 Files Included
-
-- `app.py` — Main Streamlit application
-- `tesla-banner.jpg` — Project banner image
-- `README.md` — Project description for GitHub
-- `requirements.txt` — Python dependencies
-
----
-
-## 📜 Historical Context
-
-In 1898, Nikola Tesla wowed Madison Square Garden by unveiling his **"teleautomaton"** — a radio-controlled miniature boat. This simulator pays tribute to that historic demo using Python and modern visualization tools.
-
-Read more 👉 [Tesla's Original RC Boat](https://www.engadget.com/2014-01-19-nikola-teslas-remote-control-boat.html)
-
----
-
-## 🧠 Built With
-
-- [Streamlit](https://streamlit.io)
-- [Matplotlib](https://matplotlib.org)
-- [Pandas](https://pandas.pydata.org)
-
----
-
-## 📸 Screenshot
-
-![App Screenshot](https://media.tenor.com/YKmM8xMTWEIAAAAi/speedboat.gif)
+📜 Credits
+	•	Inspired by Nikola Tesla’s 1898 demonstration of a radio-controlled boat.
+	•	Built with Streamlit, HTML5 canvas, and JavaScript.
+	•	Royal blue theme for a modern look.
