@@ -1,12 +1,12 @@
 # tesla_toy_boat_streamlit.py
-# Tesla’s Toy Boat. — Royal Blue • Mobile-friendly + Joystick + Haptics + SFX
+# Tesla’s Toy Boat — Royal Blue • Mobile-friendly + Joystick + Haptics + SFX
 # Run: streamlit run tesla_toy_boat_streamlit.py
 
 import json
 import streamlit as st
 import streamlit.components.v1 as components
 
-st.set_page_config(page_title="Tesla’s Toy Boat.", page_icon="⛵️", layout="wide")
+st.set_page_config(page_title="Tesla’s Toy Boat", page_icon="⛵️", layout="wide")
 
 # Sidebar tuning (game reads these via injected JSON)
 st.sidebar.header("⛵️ Game Settings")
@@ -32,7 +32,7 @@ HTML = r"""
 <head>
 <meta charset='utf-8' />
 <meta name='viewport' content='width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no' />
-<title>Tesla’s Toy Boat.</title>
+<title>Tesla’s Toy Boat</title>
 <style>
   :root { --royal:#4169e1; --sea:#87cefa; --sea2:#4682b4; }
   html,body{margin:0;height:100%;background:linear-gradient(180deg,var(--sea),var(--sea2));font-family:system-ui,-apple-system,Segoe UI,Roboto,Arial,sans-serif}
@@ -44,11 +44,11 @@ HTML = r"""
   canvas{display:block;width:100%;height:100%}
   .hint{color:#000a;text-align:center;padding:.4rem 0}
 
-  /* HUD */
+  /* HUD is now inside the pond to avoid overlapping header/buttons */
   .hud{
-    position:fixed; right:.75rem; top:.75rem;
+    position:absolute; right:.75rem; top:.75rem; z-index:2;
     background:#ffffffee; border:2px solid #0002; border-radius:12px; padding:.4rem .6rem;
-    display:flex; gap:.7rem; align-items:center; box-shadow:0 4px 0 #0001; font-weight:700
+    display:flex; gap:.7rem; align-items:center; box-shadow:0 4px 0 #0001; font-weight:700; pointer-events:none;
   }
   .hud div{white-space:nowrap}
 
@@ -97,21 +97,24 @@ HTML = r"""
 <body>
 <div class="wrap">
   <header>
-    <h1>Tesla’s Toy Boat.</h1>
+    <h1>Tesla’s Toy Boat</h1>
     <div class="row">
       <span class="pill">Arrow keys or touch</span>
       <button class="btn widebtn modeToggle" id="mode">Switch to Joystick</button>
     </div>
   </header>
 
-  <div id="pond"><canvas id="game" width="1280" height="720" aria-label="Pond"></canvas></div>
-  <div class="hint">Collect buoys • Avoid reeds • Tap Lamp for ✨</div>
+  <div id="pond">
+    <canvas id="game" width="1280" height="720" aria-label="Pond"></canvas>
 
-  <!-- HUD -->
-  <div class="hud" id="hud">
-    <div>Score: <span id="score">0</span>/<span id="goal">10</span></div>
-    <div>Speed: <span id="spd">0.0</span> m/s</div>
+    <!-- HUD lives inside the pond now -->
+    <div class="hud" id="hud">
+      <div>Score: <span id="score">0</span>/<span id="goal">10</span></div>
+      <div>Speed: <span id="spd">0.0</span> m/s</div>
+    </div>
   </div>
+
+  <div class="hint">Collect buoys • Avoid reeds • Tap Lamp for ✨</div>
 
   <!-- Control Dock -->
   <div class="dock">
@@ -284,10 +287,9 @@ HTML = r"""
     // From joystick OR keys
     let thrust = 0, steer = 0, brake = 0;
     if (mode==='joystick' && joy.active){
-      // Forward = up (negative y), steer from x
-      const forward = Math.max(0, -joy.y);    // 0..1
+      const forward = Math.max(0, -joy.y); // 0..1
       thrust = 100 * forward;
-      steer  = joy.x;                         // -1..1
+      steer  = joy.x;                      // -1..1
     } else {
       thrust = keys['ArrowUp'] ? 100 : 0;
       brake  = keys['ArrowDown'] ? 60 : 0;
@@ -325,7 +327,6 @@ HTML = r"""
         state.buoys.splice(i,1);
         state.score++;
         vibrate(18);
-        // pleasant two-beep pickup
         ensureAudio(); beep(740,70,'sine',0.035); setTimeout(()=>beep(880,80,'triangle',0.03),80);
         if (state.score>=state.goal){
           state.won=true;
@@ -335,7 +336,7 @@ HTML = r"""
       }
     }
 
-    // HUD updates
+    // HUD updates (now inside pond)
     document.getElementById('score').textContent = Math.min(state.score, state.goal);
     document.getElementById('goal').textContent = state.goal;
     document.getElementById('spd').textContent = (boat.v/30).toFixed(1);
@@ -391,13 +392,13 @@ HTML = r"""
     ctx.beginPath(); ctx.arc(18,0,6,0,Math.PI*2); ctx.fill();
     ctx.restore();
 
-    // win banner
+    // win banner — text changed to just "Victory"
     if (state.won){
       ctx.fillStyle="rgba(255,255,255,.86)";
       ctx.fillRect(W*0.2,H*0.4,W*0.6,110);
       ctx.strokeStyle="#0002"; ctx.lineWidth=6; ctx.strokeRect(W*0.2,H*0.4,W*0.6,110);
       ctx.fillStyle="#111"; ctx.font="bold 30px system-ui";
-      ctx.fillText("Victory in Royal Blue!", W*0.26, H*0.4+60);
+      ctx.fillText("Victory", W*0.45, H*0.4+60);
     }
   }
 })();
