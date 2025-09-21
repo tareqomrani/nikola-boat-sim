@@ -1,4 +1,4 @@
-![Tesla’s Toy Boat](banner.png)
+![Tesla’s Toy Boat](banner.png.PNG)
 Tesla’s Toy Boat ⛵️
 
 A playful Streamlit app inspired by Nikola Tesla’s 1898 radio-controlled boat
